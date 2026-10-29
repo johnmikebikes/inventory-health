@@ -9,6 +9,7 @@ import { getProductRows, summarize } from "../lib/products.server";
 import { getDataQuality } from "../lib/overview.server";
 import { getSettings } from "../lib/settings.server";
 import { isSyncRunning, runFullSync } from "../lib/sync/run.server";
+import { adminForShop } from "../lib/admin.server";
 import { FilterBar, useFilterQuery } from "../components/FilterBar";
 import { Kpi } from "../components/Kpi";
 import { AgeChart } from "../components/AgeChart";
@@ -34,14 +35,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       status: lastRun.status,
       at: (lastRun.finishedAt ?? lastRun.startedAt).toISOString(),
       error: lastRun.error?.split("\n")[0] ?? null,
+      progress: lastRun.status === "running" ? ((JSON.parse(lastRun.stats ?? "{}") as { progress?: string }).progress ?? null) : null,
     },
     running,
   };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  runFullSync(admin).catch((e) => console.error("Sync failed", e)); // runs in the background
+  const { session } = await authenticate.admin(request);
+  // Background job: use a client that refreshes the stored token itself.
+  runFullSync(adminForShop(session.shop)).catch((e) => console.error("Sync failed", e)); // runs in the background
   return { started: true };
 };
 
@@ -68,7 +71,7 @@ export default function Overview() {
         <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
           <s-text color="subdued">
             {syncing
-              ? "Sync running… this page refreshes itself. Keep it open."
+              ? `Sync running${lastRun?.progress ? ` · ${lastRun.progress}` : "…"} · keep this page open`
               : lastRun
                 ? `Last sync ${lastRun.status}, ${new Date(lastRun.at).toLocaleString()}`
                 : "Never synced"}

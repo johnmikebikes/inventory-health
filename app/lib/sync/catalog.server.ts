@@ -62,7 +62,7 @@ export async function syncLocations(admin: AdminClient, now = new Date()) {
   return data.locations.nodes.length as number;
 }
 
-export async function syncProducts(admin: AdminClient, now = new Date()) {
+export async function syncProducts(admin: AdminClient, now = new Date(), onProgress?: (n: number) => unknown) {
   const ops: any[] = [];
   let n = 0;
   for await (const p of runBulkQuery(admin, PRODUCTS_BULK)) {
@@ -81,7 +81,10 @@ export async function syncProducts(admin: AdminClient, now = new Date()) {
     };
     ops.push(prisma.product.upsert({ where: { id: p.id }, create: { id: p.id, ...row }, update: row }));
     n++;
-    if (ops.length >= BATCH) await flush(ops);
+    if (ops.length >= BATCH) {
+      await flush(ops);
+      await onProgress?.(n);
+    }
   }
   await flush(ops);
   // Products deleted in Shopify since the last run (cascades to variants and levels).
@@ -103,7 +106,7 @@ function quantitiesToRow(quantities: { name: string; quantity: number }[]) {
   };
 }
 
-export async function syncVariantsAndLevels(admin: AdminClient, now = new Date()) {
+export async function syncVariantsAndLevels(admin: AdminClient, now = new Date(), onProgress?: (n: number) => unknown) {
   const knownProducts = new Set((await prisma.product.findMany({ select: { id: true } })).map((p) => p.id));
   const knownLocations = new Set((await prisma.location.findMany({ select: { id: true } })).map((l) => l.id));
   // Bulk JSONL lists each child line after its parent, so we remember which
@@ -151,7 +154,10 @@ export async function syncVariantsAndLevels(admin: AdminClient, now = new Date()
       );
       levels++;
     }
-    if (ops.length >= BATCH) await flush(ops);
+    if (ops.length >= BATCH) {
+      await flush(ops);
+      await onProgress?.(variants);
+    }
   }
   await flush(ops);
   const removedVariants = await prisma.variant.deleteMany({ where: { syncedAt: { lt: now } } });

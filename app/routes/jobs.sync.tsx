@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { unauthenticated } from "../shopify.server";
+import { adminForShop } from "../lib/admin.server";
 import prisma from "../db.server";
 import { isSyncRunning, runFullSync } from "../lib/sync/run.server";
 
@@ -19,7 +19,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const last = await prisma.syncRun.findFirst({ orderBy: { startedAt: "desc" } });
   return Response.json({
     running: await isSyncRunning(),
-    last: last && { status: last.status, startedAt: last.startedAt, finishedAt: last.finishedAt, error: last.error?.split("\n")[0] ?? null },
+    last: last && { status: last.status, startedAt: last.startedAt, finishedAt: last.finishedAt, error: last.error?.split("\n")[0] ?? null,
+      progress: last.status === "running" ? ((JSON.parse(last.stats ?? "{}") as { progress?: string }).progress ?? null) : null },
   });
 };
 
@@ -27,7 +28,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (!authorized(request)) return new Response("Unauthorized", { status: 401 });
   const shop = process.env.SHOP_DOMAIN;
   if (!shop) return new Response("SHOP_DOMAIN not set", { status: 500 });
-  const { admin } = await unauthenticated.admin(shop);
-  runFullSync(admin).catch((e) => console.error("Nightly sync failed", e));
+  runFullSync(adminForShop(shop)).catch((e) => console.error("Nightly sync failed", e));
   return new Response("Sync started", { status: 202 });
 };

@@ -49,7 +49,7 @@ async function fetchWindow(admin: AdminClient, since: Date, until: Date): Promis
  * Re-pulls movements for [since, until] (inclusive) and replaces what we had for those days.
  * Nightly runs re-pull the last 7 days to catch late edits; the first run backfills from 2024.
  */
-export async function syncMovements(admin: AdminClient, since: Date, until: Date) {
+export async function syncMovements(admin: AdminClient, since: Date, until: Date, onProgress?: (label: string) => unknown) {
   const variants = new Map(
     (await prisma.variant.findMany({ select: { id: true, legacyId: true } })).map((v) => [v.legacyId, v.id]),
   );
@@ -59,6 +59,7 @@ export async function syncMovements(admin: AdminClient, since: Date, until: Date
 
   for (let start = since; start <= until; start = addDays(start, 7)) {
     const end = new Date(Math.min(addDays(start, 6).getTime(), until.getTime()));
+    await onProgress?.(start.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }));
     const rows = await fetchWindow(admin, start, end);
 
     const merged = new Map<string, { variantId: string; locationId: string; date: Date; kind: Kind; qty: number }>();
