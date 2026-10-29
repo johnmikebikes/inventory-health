@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "e81712cfb218819e16cef87d59a139c1"
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://inventory-health.onrender.com"
 embedded = true
 name = "Inventory Health"
 
@@ -30,8 +30,7 @@ api_version = "2026-10"
 scopes = "read_products,read_inventory,read_locations,read_reports"
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [ "https://inventory-health.onrender.com/auth/callback" ]
 
 [build]
-include_config_on_deploy = true
-automatically_update_urls_on_dev = true
+automatically_update_urls_on_dev = false
