@@ -2,6 +2,7 @@ import prisma from "../db.server";
 import { getSettings, type HealthSettings } from "./settings.server";
 import { agingBucket, stockCycleStart, type Movement } from "./aging";
 import { buildStyleRows } from "./styles";
+import { canonicalLabels, labelFor } from "./names";
 import { bumpCacheVersion } from "./cache.server";
 
 const DAY = 86_400_000;
@@ -53,6 +54,10 @@ export async function computeMetrics(
     prisma.styleRow.deleteMany({}),
   ]);
   let styleCount = 0;
+  // One label per brand / type, ignoring case and punctuation ("NIKE" = "Nike" = "nike").
+  const allNames = await prisma.product.findMany({ where: { isGiftCard: false }, select: { vendor: true, productType: true } });
+  const vendorLabels = canonicalLabels(allNames.map((n) => n.vendor));
+  const typeLabels = canonicalLabels(allNames.map((n) => n.productType));
 
   // Styles are processed in pages so memory stays small on a 512 MB host.
   const PAGE = 250;
@@ -203,12 +208,14 @@ export async function computeMetrics(
           );
 
           // Daily rollup for trend charts
-          const key = `${s.locationId}|${p.vendor}|${p.productType}`;
+          const vendor = labelFor(vendorLabels, p.vendor);
+          const productType = labelFor(typeLabels, p.productType);
+          const key = `${s.locationId}|${vendor}|${productType}`;
           const snap = snapshot.get(key) ?? {
             date: today,
             locationId: s.locationId,
-            vendor: p.vendor,
-            productType: p.productType,
+            vendor,
+            productType,
             onHand: 0,
             costCents: 0,
             retailCents: 0,
@@ -258,7 +265,7 @@ export async function computeMetrics(
     const styles = buildStyleRows(
 
 
-      products.map((p) => ({ id: p.id, title: p.title, vendor: p.vendor, productType: p.productType, status: p.status, publishedAt: p.publishedAt })),
+      products.map((p) => ({ id: p.id, title: p.title, vendor: labelFor(vendorLabels, p.vendor), productType: labelFor(typeLabels, p.productType), status: p.status, publishedAt: p.publishedAt })),
 
 
       variantRows.map((r) => ({ ...r, ...variantInfo.get(r.variantId)! })),

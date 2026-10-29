@@ -1,5 +1,6 @@
 import prisma from "../db.server";
 import { cached } from "./cache.server";
+import { nameKey } from "./names";
 import { statusesFor, type Filters } from "./filters.server";
 
 /**
@@ -24,11 +25,14 @@ async function styleRowsFor(locationId: string): Promise<ProductRow[]> {
 export async function getProductRows(filters: Filters): Promise<ProductRow[]> {
   const statuses = new Set(statusesFor(filters));
   const rows = await styleRowsFor(filters.locationId);
+  // Compare by grouped name so older saved views ("NIKE") still match "Nike".
+  const vendorKey = filters.vendor ? nameKey(filters.vendor) : null;
+  const typeKey = filters.productType ? nameKey(filters.productType) : null;
   return rows.filter(
     (r) =>
       statuses.has(r.status) &&
-      (!filters.vendor || r.vendor === filters.vendor) &&
-      (!filters.productType || r.productType === filters.productType),
+      (!vendorKey || nameKey(r.vendor) === vendorKey) &&
+      (!typeKey || nameKey(r.productType) === typeKey),
   );
 }
 

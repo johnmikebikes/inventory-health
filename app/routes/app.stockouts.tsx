@@ -4,7 +4,7 @@ import { useFetcher, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { resolveContext, statusesFor } from "../lib/filters.server";
+import { rawSpellings, resolveContext, statusesFor } from "../lib/filters.server";
 import { sizeGrids } from "../lib/sizes.server";
 import { getSettings } from "../lib/settings.server";
 import { FilterBar, useFilterQuery } from "../components/FilterBar";
@@ -17,10 +17,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const ctx = await resolveContext(request, sessionToken);
   const kind = new URL(request.url).searchParams.get("kind") === "low" ? "low" : "out";
   const f = ctx.filters;
+  // Brand/type are grouped ("NIKE" = "Nike"), so match every raw spelling.
+  const [vendors, types] = await Promise.all([
+    f.vendor ? rawSpellings("vendor", f.vendor) : null,
+    f.productType ? rawSpellings("productType", f.productType) : null,
+  ]);
   const productWhere = {
     status: { in: statusesFor(f) },
-    ...(f.vendor ? { vendor: f.vendor } : {}),
-    ...(f.productType ? { productType: f.productType } : {}),
+    ...(vendors ? { vendor: { in: vendors } } : {}),
+    ...(types ? { productType: { in: types } } : {}),
   };
 
   const [metrics, counts, watch, settings] = await Promise.all([
