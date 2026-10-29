@@ -1,0 +1,31 @@
+name: Nightly inventory sync
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # 2:17 a.m. Eastern (EDT); 1:17 a.m. in winter
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Wake the app and start the sync
+        run: |
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Authorization: Bearer ${{ secrets.JOB_TOKEN }}" "${{ secrets.APP_URL }}/jobs/sync") || true
+            echo "attempt $i: HTTP $code"
+            [ "$code" = "202" ] && exit 0
+            sleep 30
+          done
+          exit 1
+      - name: Wait for it to finish
+        run: |
+          sleep 30
+          for i in $(seq 1 55); do
+            body=$(curl -s -H "Authorization: Bearer ${{ secrets.JOB_TOKEN }}" "${{ secrets.APP_URL }}/jobs/sync")
+            echo "$body"
+            echo "$body" | grep -q '"running":false' && { echo "$body" | grep -q '"status":"succeeded"' && exit 0 || exit 1; }
+            sleep 60
+          done
+          exit 1
