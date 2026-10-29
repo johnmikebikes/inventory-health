@@ -1,0 +1,37 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "e81712cfb218819e16cef87d59a139c1"
+application_url = "https://shopify.dev/apps/default-app-home"
+embedded = true
+name = "Inventory Health"
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/inventory_levels/update"
+  topics = [ "inventory_levels/update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/products/update"
+  topics = [ "products/update" ]
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+# Read-only for the POC. Module 2 (markdowns) will add write_products.
+scopes = "read_products,read_inventory,read_locations,read_reports"
+
+[auth]
+redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+
+[build]
+include_config_on_deploy = true
+automatically_update_urls_on_dev = true

@@ -1,0 +1,247 @@
+// Inventory Health (CORPORATE) - data model
+// Dev uses SQLite. Production should switch provider to "postgresql" (see README-INVENTORY.md).
+// Money is stored as integer cents. Shopify IDs are stored as full GIDs.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+// ---------- Shopify auth (from the template) ----------
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+// ---------- Mirror of Shopify catalog and stock (rebuilt nightly, patched by webhooks) ----------
+
+model Location {
+  id                String           @id // gid://shopify/Location/...
+  name              String           @unique // exact Shopify name; used for system saved views
+  isActive          Boolean
+  countsAsSellable  Boolean          @default(true) // false for "Warehouse Returns"
+  syncedAt          DateTime
+  levels            InventoryLevel[]
+}
+
+model Product {
+  id          String         @id // gid://shopify/Product/...
+  title       String
+  handle      String
+  vendor      String
+  productType String
+  status      String // ACTIVE | DRAFT | ARCHIVED
+  tags        String // JSON array of strings
+  isGiftCard  Boolean        @default(false)
+  createdAt   DateTime
+  publishedAt DateTime? // null = never published (pre-release draft)
+  updatedAt   DateTime
+  syncedAt    DateTime
+  variants    Variant[]
+  metrics     ProductMetric[]
+
+  @@index([vendor])
+  @@index([productType])
+  @@index([status])
+}
+
+model Variant {
+  id              String           @id // gid://shopify/ProductVariant/...
+  legacyId        String           @unique // numeric id, as ShopifyQL returns it
+  productId       String
+  inventoryItemId String           @unique
+  title           String
+  sku             String?
+  barcode         String?
+  size            String? // value of the "Size" option when present
+  position        Int              @default(0)
+  priceCents      Int
+  compareAtCents  Int?
+  unitCostCents   Int? // null = missing cost (flagged on data-quality panel)
+  tracked         Boolean
+  createdAt       DateTime
+  syncedAt        DateTime
+  product         Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  levels          InventoryLevel[]
+  movements       InventoryMovementDaily[]
+  metrics         VariantMetric[]
+
+  @@index([productId])
+}
+
+model InventoryLevel {
+  variantId      String
+  locationId     String
+  available      Int
+  committed      Int
+  incoming       Int
+  onHand         Int
+  reserved       Int
+  damaged        Int
+  safetyStock    Int
+  qualityControl Int
+  updatedAt      DateTime // Shopify's updatedAt for the level
+  syncedAt       DateTime
+  variant        Variant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([variantId, locationId])
+  @@index([locationId])
+}
+
+// Daily inventory movements per variant and location, from ShopifyQL inventory_adjustment_history.
+// kind: "initial"  = initial_adjustment adding units (first stock for a new variant)
+//       "stock_in" = correction adding units (how new stock is received today)
+//       "sold"     = order_fulfilled (units leaving committed), stored as a positive qty
+//       "returned" = restock to available (returns), positive qty
+// Transfers between our own locations are NOT stored, so they never reset age.
+model InventoryMovementDaily {
+  variantId  String
+  locationId String
+  date       DateTime // shop-local calendar day, stored as UTC midnight
+  kind       String
+  qty        Int
+  variant    Variant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@id([variantId, locationId, date, kind])
+  @@index([date])
+  @@index([kind, date])
+}
+
+// ---------- Computed nightly (what the dashboard reads) ----------
+
+// One row per variant per location, plus one row per variant with locationId = "ALL"
+// (sellable locations combined).
+model VariantMetric {
+  variantId        String
+  locationId       String // Location.id or "ALL"
+  onHand           Int
+  available        Int
+  costCents        Int // max(onHand,0) * unit cost; 0 when cost missing
+  retailCents      Int
+  sold28           Int
+  sold30           Int
+  sold60           Int
+  sold90           Int
+  soldDeadWindow   Int // units sold within the dead-stock window (setting)
+  sellThrough30    Float?
+  sellThrough60    Float?
+  sellThrough90    Float?
+  weeksOfSupply    Float? // null = no recent sales (infinite)
+  stockCycleStart  DateTime? // when the current stock was first received
+  ageDays          Int? // null = pre-release draft (not aging yet)
+  ageEstimated     Boolean // true when history doesn't reach back far enough
+  agingBucket      String // "0-30" | "31-60" | "61-90" | "91-180" | "180+" | "pre-release"
+  isDead           Boolean
+  isStockout       Boolean
+  isLowStock       Boolean
+  computedAt       DateTime
+  variant          Variant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@id([variantId, locationId])
+  @@index([locationId, agingBucket])
+}
+
+// Size-run health per product per location (and "ALL").
+model ProductMetric {
+  productId       String
+  locationId      String
+  expectedSizes   Int // variants with a SKU/UPC or any stock history
+  inStockSizes    Int
+  brokenRun       Boolean
+  onHand          Int
+  costCents       Int
+  computedAt      DateTime
+  product         Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([productId, locationId])
+  @@index([locationId, brokenRun])
+}
+
+// Small daily rollup for trend charts (filterable by location, brand, type).
+model DailySnapshot {
+  date          DateTime
+  locationId    String
+  vendor        String
+  productType   String
+  onHand        Int
+  costCents     Int
+  retailCents   Int
+  agedCostCents Int // cost aged 91+ days
+  deadCostCents Int
+
+  @@id([date, locationId, vendor, productType])
+}
+
+// ---------- App configuration ----------
+
+model Setting {
+  key       String   @id
+  value     String // JSON
+  updatedAt DateTime @updatedAt
+}
+
+model SavedView {
+  id          String   @id @default(cuid())
+  name        String
+  filters     String // JSON: { locationIds, vendors, productTypes, collectionIds, tags, statuses }
+  ownerUserId String? // null = shared
+  isSystem    Boolean  @default(false) // auto-created per location, named exactly as in Shopify
+  locationId  String?  @unique // set for system location views
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model UserPreference {
+  userId        String  @id // Shopify staff user id from the session token
+  defaultViewId String?
+}
+
+// "Always in stock" products pinned on the stockouts screen.
+model WatchlistItem {
+  productId String   @id
+  addedBy   String?
+  addedAt   DateTime @default(now())
+}
+
+// Items excluded from markdown candidates (and optionally from health views).
+model Exclusion {
+  id        String   @id @default(cuid())
+  kind      String // "vendor" | "tag" | "collection" | "product"
+  value     String
+  scope     String   @default("markdown") // "markdown" | "all"
+  addedBy   String?
+  createdAt DateTime @default(now())
+
+  @@unique([kind, value, scope])
+}
+
+model SyncRun {
+  id          String    @id @default(cuid())
+  kind        String // "full" | "movements" | "metrics"
+  status      String // "running" | "succeeded" | "failed"
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  stats       String? // JSON counts
+  error       String?
+}
