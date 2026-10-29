@@ -34,9 +34,21 @@ export async function computeMetrics(
     locations.filter((l) => l.countsAsSellable).map((l) => l.id),
   );
 
-  const variantRows: any[] = [];
-  const productRows: any[] = [];
+  let variantRows: any[] = [];
+  let productRows: any[] = [];
   const snapshot = new Map<string, any>();
+  let variantCount = 0;
+  let productCount = 0;
+  const chunks = <T>(xs: T[], n = 1000) =>
+    Array.from({ length: Math.ceil(xs.length / n) }, (_, i) =>
+      xs.slice(i * n, i * n + n),
+    );
+
+  // Rebuild the computed tables page by page so memory stays flat.
+  await prisma.$transaction([
+    prisma.variantMetric.deleteMany({}),
+    prisma.productMetric.deleteMany({}),
+  ]);
 
   // Styles are processed in pages so memory stays small on a 512 MB host.
   const PAGE = 250;
@@ -230,32 +242,24 @@ export async function computeMetrics(
       }
     }
 
+    for (const data of chunks(variantRows))
+      await prisma.variantMetric.createMany({ data });
+    for (const data of chunks(productRows))
+      await prisma.productMetric.createMany({ data });
+    variantCount += variantRows.length;
+    productCount += productRows.length;
+    variantRows = [];
+    productRows = [];
     if (products.length < PAGE) break;
   }
 
-  // Replace computed tables in one go.
-  const chunks = <T>(xs: T[], n = 1000) =>
-    Array.from({ length: Math.ceil(xs.length / n) }, (_, i) =>
-      xs.slice(i * n, i * n + n),
-    );
-  await prisma.$transaction([
-    prisma.variantMetric.deleteMany({}),
-    prisma.productMetric.deleteMany({}),
-    prisma.dailySnapshot.deleteMany({ where: { date: today } }),
-    ...chunks(variantRows).map((data) =>
-      prisma.variantMetric.createMany({ data }),
-    ),
-    ...chunks(productRows).map((data) =>
-      prisma.productMetric.createMany({ data }),
-    ),
-    ...chunks([...snapshot.values()]).map((data) =>
-      prisma.dailySnapshot.createMany({ data }),
-    ),
-  ]);
+  await prisma.dailySnapshot.deleteMany({ where: { date: today } });
+  for (const data of chunks([...snapshot.values()]))
+    await prisma.dailySnapshot.createMany({ data });
 
   return {
-    variantMetrics: variantRows.length,
-    productMetrics: productRows.length,
+    variantMetrics: variantCount,
+    productMetrics: productCount,
     snapshotRows: snapshot.size,
   };
 }

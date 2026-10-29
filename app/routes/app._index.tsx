@@ -18,11 +18,12 @@ import { money, moneyCompact, num, pct } from "../lib/format";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { sessionToken } = await authenticate.admin(request);
   const ctx = await resolveContext(request, sessionToken);
-  const [rows, quality, lastRun, running, settings] = await Promise.all([
-    getProductRows(ctx.filters),
-    getDataQuality(),
+  const running = await isSyncRunning();
+  // While a sync runs, skip the heavy dashboard queries (they compete with the sync for memory).
+  const [rows, quality, lastRun, settings] = await Promise.all([
+    running ? Promise.resolve([]) : getProductRows(ctx.filters),
+    running ? Promise.resolve({ negativeOnHandLevels: 0, inStockMissingCost: 0, untrackedVariantsExcluded: 0 }) : getDataQuality(),
     prisma.syncRun.findFirst({ orderBy: { startedAt: "desc" } }),
-    isSyncRunning(),
     getSettings(),
   ]);
   return {
@@ -59,7 +60,7 @@ export default function Overview() {
   // While a sync runs, refresh every 5 seconds (this also keeps a sleeping host awake).
   useEffect(() => {
     if (!syncing) return;
-    const t = setInterval(() => revalidator.revalidate(), 5000);
+    const t = setInterval(() => revalidator.revalidate(), 15000);
     return () => clearInterval(t);
   }, [syncing, revalidator]);
 
@@ -81,6 +82,12 @@ export default function Overview() {
           </s-button>
         </s-stack>
       </s-section>
+
+      {running ? (
+        <s-banner tone="info" heading="Sync in progress">
+          The numbers below fill in when the sync finishes. Keep this page open; it checks progress every 15 seconds.
+        </s-banner>
+      ) : null}
 
       {!lastRun ? (
         <s-banner tone="info" heading="No data yet">
