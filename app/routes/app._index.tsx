@@ -64,6 +64,21 @@ export default function Overview() {
     <s-page heading="Inventory health" inlineSize="large">
       <FilterBar ctx={ctx} />
 
+      <s-section>
+        <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
+          <s-text color="subdued">
+            {syncing
+              ? "Sync running… this page refreshes itself. Keep it open."
+              : lastRun
+                ? `Last sync ${lastRun.status}, ${new Date(lastRun.at).toLocaleString()}`
+                : "Never synced"}
+          </s-text>
+          <s-button variant="primary" onClick={() => fetcher.submit({}, { method: "POST" })} {...(syncing ? { loading: true } : {})}>
+            Sync now
+          </s-button>
+        </s-stack>
+      </s-section>
+
       {!lastRun ? (
         <s-banner tone="info" heading="No data yet">
           Click Sync now. The first sync reads inventory history back to 2024 and takes about 10–15 minutes.
@@ -119,26 +134,11 @@ export default function Overview() {
         </s-table>
       </s-section>
 
-      <s-section slot="aside" heading="Sync">
-        <s-stack direction="block" gap="base">
-          <s-text color="subdued">
-            {syncing
-              ? "Sync running… this page refreshes itself."
-              : lastRun
-                ? `Last sync ${lastRun.status}, ${new Date(lastRun.at).toLocaleString()}`
-                : "Never synced"}
-          </s-text>
-          <s-button variant="primary" onClick={() => fetcher.submit({}, { method: "POST" })} {...(syncing ? { loading: true } : {})}>
-            Sync now
-          </s-button>
-        </s-stack>
-      </s-section>
-
-      <s-section slot="aside" heading="Data quality">
-        <s-stack direction="block" gap="small-200">
-          <s-link href={link("/app/products", { flag: "missingcost" })}>{num(quality.inStockMissingCost)} in stock without a cost</s-link>
-          <s-text color="subdued">{num(quality.negativeOnHandLevels)} negative quantities (counted as 0)</s-text>
-          <s-text color="subdued">{num(quality.untrackedVariantsExcluded)} untracked items left out</s-text>
+      <s-section heading="Data quality">
+        <s-stack direction="inline" gap="large">
+          <s-link href={link("/app/products", { flag: "missingcost" })}>{`${num(quality.inStockMissingCost)} in stock without a cost`}</s-link>
+          <s-text color="subdued">{`${num(quality.negativeOnHandLevels)} negative quantities (counted as 0)`}</s-text>
+          <s-text color="subdued">{`${num(quality.untrackedVariantsExcluded)} untracked items left out`}</s-text>
         </s-stack>
       </s-section>
     </s-page>
