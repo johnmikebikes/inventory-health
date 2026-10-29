@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { cached } from "./cache.server";
 import { DEFAULT_STATUSES, listViews, parseFilters, type ViewFilters } from "./views.server";
 
 export type Filters = {
@@ -17,12 +18,18 @@ export async function resolveContext(request: Request, sessionToken: { sub?: unk
   const url = new URL(request.url);
   const p = url.searchParams;
 
-  const [views, pref, locations, vendorRows, typeRows] = await Promise.all([
+  const [views, pref, { locations, vendorRows, typeRows }] = await Promise.all([
     listViews(userId),
     userId ? prisma.userPreference.findUnique({ where: { userId } }) : null,
-    prisma.location.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
-    prisma.product.findMany({ distinct: ["vendor"], select: { vendor: true }, orderBy: { vendor: "asc" } }),
-    prisma.product.findMany({ distinct: ["productType"], select: { productType: true }, orderBy: { productType: "asc" } }),
+    // Filter options only change with the catalog, so they're cached until the next recalculation.
+    cached("filter-options", async () => {
+      const [locations, vendorRows, typeRows] = await Promise.all([
+        prisma.location.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+        prisma.product.findMany({ distinct: ["vendor"], select: { vendor: true }, orderBy: { vendor: "asc" } }),
+        prisma.product.findMany({ distinct: ["productType"], select: { productType: true }, orderBy: { productType: "asc" } }),
+      ]);
+      return { locations, vendorRows, typeRows };
+    }),
   ]);
 
   const hasExplicit = ["view", "location", "vendor", "type", "archived"].some((k) => p.has(k));

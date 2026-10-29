@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { cached } from "./cache.server";
 import { DEFAULT_STATUSES, type ViewFilters } from "./views.server";
 
 import { BUCKETS } from "./buckets";
@@ -67,6 +68,10 @@ export async function getOverview(filters: ViewFilters) {
 }
 
 export async function getDataQuality() {
+  return cached("data-quality", loadDataQuality);
+}
+
+async function loadDataQuality() {
   const [negative, missingCost, untracked] = await Promise.all([
     prisma.inventoryLevel.count({ where: { onHand: { lt: 0 }, variant: { tracked: true } } }),
     prisma.variant.count({ where: { tracked: true, unitCostCents: null, levels: { some: { onHand: { gt: 0 } } } } }),

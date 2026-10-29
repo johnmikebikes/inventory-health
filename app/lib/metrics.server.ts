@@ -1,6 +1,8 @@
 import prisma from "../db.server";
 import { getSettings, type HealthSettings } from "./settings.server";
 import { agingBucket, stockCycleStart, type Movement } from "./aging";
+import { buildStyleRows } from "./styles";
+import { bumpCacheVersion } from "./cache.server";
 
 const DAY = 86_400_000;
 const ALL = "ALL";
@@ -48,7 +50,9 @@ export async function computeMetrics(
   await prisma.$transaction([
     prisma.variantMetric.deleteMany({}),
     prisma.productMetric.deleteMany({}),
+    prisma.styleRow.deleteMany({}),
   ]);
+  let styleCount = 0;
 
   // Styles are processed in pages so memory stays small on a 512 MB host.
   const PAGE = 250;
@@ -242,6 +246,41 @@ export async function computeMetrics(
       }
     }
 
+    // Finished per-style rows for the screens (same math the screens used to run per click).
+
+
+    const variantInfo = new Map<string, { productId: string; unitCostCents: number | null }>();
+
+
+    for (const p of products) for (const v of p.variants) variantInfo.set(v.id, { productId: p.id, unitCostCents: v.unitCostCents });
+
+
+    const styles = buildStyleRows(
+
+
+      products.map((p) => ({ id: p.id, title: p.title, vendor: p.vendor, productType: p.productType, status: p.status, publishedAt: p.publishedAt })),
+
+
+      variantRows.map((r) => ({ ...r, ...variantInfo.get(r.variantId)! })),
+
+
+      productRows,
+
+
+      settings.deadStockMinAgeDays,
+
+
+    );
+
+
+    const styleData = styles.map(({ id, ...r }) => ({ productId: id, ...r, computedAt: now }));
+
+
+    for (const data of chunks(styleData)) await prisma.styleRow.createMany({ data });
+
+
+    styleCount += styleData.length;
+
     for (const data of chunks(variantRows))
       await prisma.variantMetric.createMany({ data });
     for (const data of chunks(productRows))
@@ -257,7 +296,9 @@ export async function computeMetrics(
   for (const data of chunks([...snapshot.values()]))
     await prisma.dailySnapshot.createMany({ data });
 
+  bumpCacheVersion();
   return {
+    styleRows: styleCount,
     variantMetrics: variantCount,
     productMetrics: productCount,
     snapshotRows: snapshot.size,

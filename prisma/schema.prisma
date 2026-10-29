@@ -178,6 +178,40 @@ model ProductMetric {
   @@index([locationId, brokenRun])
 }
 
+// One finished row per style per location ("ALL" = sellable combined), written by
+// the nightly calculation so screens read it directly instead of recomputing.
+model StyleRow {
+  productId        String
+  locationId       String
+  title            String
+  vendor           String
+  productType      String
+  status           String
+  onHand           Int
+  available        Int
+  costCents        Int
+  retailCents      Int
+  sold30           Int
+  sold90           Int
+  sellThrough30    Float?
+  sellThrough90    Float?
+  weeksOfSupply    Float?
+  ageDays          Int?
+  ageEstimated     Boolean
+  bucket           String
+  isDead           Boolean
+  stockoutVariants Int
+  lowStockVariants Int
+  brokenRun        Boolean
+  expectedSizes    Int
+  inStockSizes     Int
+  missingCost      Boolean
+  computedAt       DateTime
+
+  @@id([productId, locationId])
+  @@index([locationId])
+}
+
 // Small daily rollup for trend charts (filterable by location, brand, type).
 model DailySnapshot {
   date          DateTime
